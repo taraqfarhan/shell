@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+import sys
+import os
+
+BUILTINS = {'echo', 'type', 'exit', 'pwd', 'cd'}
+
+def isinpath(command):
+    for path in os.environ['PATH'].split(os.pathsep):
+        if not os.path.exists(path):
+            continue
+
+        for e in os.listdir(path):
+            filepath = f"{path}/{e}"
+            if command == e and os.access(filepath, os.X_OK):
+                return filepath
+
+def main():
+    while True:
+        sys.stdout.write("$ ")
+
+        # extract command and flags
+        command = input()
+        command = command.split()
+        args = ' '.join(command[1:])
+        command = command[0]
+
+        # handle built-ins
+        if command == 'exit':
+            break
+        if command == 'echo':
+            print(args)
+        elif command == 'pwd':
+            print(os.getcwd())
+        elif command == 'cd':
+            if args.startswith('~'):
+                args = args.replace('~', os.environ['HOME'])
+            if os.path.exists(args):
+                os.chdir(args)
+            else:
+                print(f"{command}: {args}: No such file or directory")
+        elif command == 'type':
+            if args in BUILTINS:
+                print(f"{args} is a shell builtin")
+                continue
+
+            filepath = isinpath(args)
+            if filepath:
+                print(f"{args} is {filepath}")
+            else:
+                print(f"{args}: not found")
+
+        if command in BUILTINS: continue
+
+        # handle other executables
+        filepath = isinpath(command)
+        if filepath and os.access(filepath, os.X_OK):
+            os.system(command + " " + args)
+        elif os.access(command, os.X_OK):
+            if not command.startswith("./"):
+                os.system(f"./{command} {args}")
+            else:
+                os.system(command + " " + args)
+        else:
+            print(f"{command}: command not found")
+
+if __name__ == "__main__":
+    main()
