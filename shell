@@ -4,12 +4,13 @@ import os
 import subprocess
 import shlex
 
-
 BUILTINS = {"echo", "type", "exit", "pwd", "cd"}
+REDIRECTIONS = {'>', '1>', '2>', '<', '>>', '1>>', '2>>', '2>&1', '&>', \
+                '>&', '&>>', '<<<'}
 
 
 def isinpath(command):
-    for path in os.environ["PATH"].split(os.pathsep):
+    for path in os.getenv("PATH").split(os.pathsep):
         if not os.path.exists(path):
             continue
 
@@ -18,9 +19,13 @@ def isinpath(command):
             if command == e and os.access(filepath, os.X_OK):
                 return filepath
 
-def run_program(command, args):
+
+def run_program(user_input):
+    if isredirection(user_input):
+        return os.system(' '.join(user_input))
+
     process = subprocess.Popen(
-        [command, *args],
+        user_input,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True, bufsize=1  # Line-buffered
@@ -42,6 +47,9 @@ def run_program(command, args):
         print(stderr, end='', file=sys.stderr)
 
 
+def isredirection(user_input):
+    return any(part in REDIRECTIONS for part in user_input)
+
 
 def main():
     while True:
@@ -50,26 +58,24 @@ def main():
         # extract command and arguments
         # shlex.split handles the quoting
         user_input = shlex.split(input())
+
         command = user_input[0]
-        args = user_input[1:]
 
         # handle built-ins
         if command == "exit":
             break
-        if command == "echo":
-            print(*args)
-        elif command == "pwd":
+        if command == "pwd":
             print(os.getcwd())
         elif command == "cd":
-            path = args[0]
+            path = user_input[1]
             if path.startswith('~'):
-                path = path.replace('~', os.environ["HOME"])
+                path = path.replace('~', os.getenv("HOME"))
             if os.path.exists(path):
                 os.chdir(path)
             else:
                 print(f"{command}: {path}: No such file or directory")
         elif command == "type":
-            for arg in args:
+            for arg in user_input[1:]:
                 if arg in BUILTINS:
                     print(f"{arg} is a shell builtin")
                     continue
@@ -79,17 +85,15 @@ def main():
                     print(f"{arg} is {filepath}")
                 else:
                     print(f"{arg}: not found")
-
-        if command in BUILTINS: continue
-
-        # handle executables
-        filepath = isinpath(command)
-        if filepath and os.access(filepath, os.X_OK):
-            run_program(command, args)
-        elif os.access(command, os.X_OK):
-            run_program(command, args)
         else:
-            print(f"{command}: command not found")
+            # handle executables
+            filepath = isinpath(command)
+            if filepath and os.access(filepath, os.X_OK):
+                run_program(user_input)
+            elif os.access(command, os.X_OK):
+                run_program(user_input)
+            else:
+                print(f"{command}: command not found")
 
 
 if __name__ == "__main__": main()
