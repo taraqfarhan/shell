@@ -3,97 +3,165 @@ import sys
 import os
 import subprocess
 import shlex
+import readline
+import pty
 
+RED = "\033[91m"
+GREEN = "\033[92m"
+RESET = "\033[0m"
+
+EXECUTABLES = set()
+EXECUTABLE_PATHS = set()
 BUILTINS = {"echo", "type", "exit", "pwd", "cd"}
+ALL_EXECS = set()
 REDIRECTIONS = {'>', '1>', '2>', '<', '>>', '1>>', '2>>', '2>&1', '&>', \
                 '>&', '&>>', '<<<'}
 
 
+def run(command_list):
+    # if the command involves redirections
+    if any(part in REDIRECTIONS for part in command_list):
+        waitstatus = os.system(' '.join(command_list))
+        return os.waitstatus_to_exitcode(waitstatus)
+
+    # pseudo-terminal controller pair
+    master_fd, slave_fd = pty.openpty()
+
+    # process attached to the pseudo-terminal
+    process = subprocess.Popen(
+        command_list,
+        stdout=slave_fd,
+        stderr=slave_fd, # merge stderr into stdout stream
+        text=True,
+        close_fds=True
+    )
+
+    os.close(slave_fd)
+
+    # read from the master descriptor in real-time
+    while True:
+        try:
+            # read up to 1024 bytes of raw stream data
+            data = os.read(master_fd, 1024).decode("utf-8", errors="ignore")
+        except OSError:
+            break
+
+        if not data:
+            break
+
+        print(data, end='')
+        sys.stdout.flush()
+
+    os.close(master_fd)
+    process.wait()
+
+    return process.returncode
+
+
 def isinpath(command):
+    for path in EXECUTABLE_PATHS:
+        index = path.rfind('/') + 1   # start index of the last part
+        if command == path[index:]:
+            return path
+
+
+def tab_completer(text, state):
+    """
+    readline will call this callback function the exact moment user hits tab
+    'text' is whatever user typed so far
+    'state' represents how many time tab is pressed (0, 1, 2...)
+
+    """
+    # all commands that start with what the user typed
+    matches = [cmd for cmd in ALL_EXECS if cmd.startswith(text)]
+    if state < len(matches):
+        return matches[state] + ' '
+
+
+def main():
+    readline.set_completer(tab_completer)
+    if sys.platform == 'linux':
+        readline.parse_and_bind("tab: complete")
+    else:
+        readline.parse_and_bind("bind ^I rl_complete")
+
+    # get all the executables from the PATH
     for path in os.getenv("PATH").split(os.pathsep):
         if not os.path.exists(path):
             continue
 
-        for e in os.listdir(path):
-            filepath = f"{path}/{e}"
-            if command == e and os.access(filepath, os.X_OK):
-                return filepath
+        for executable in os.listdir(path):
+            filepath = f"{path}/{executable}"
+            if os.access(filepath, os.X_OK):
+                EXECUTABLE_PATHS.add(filepath)
+                EXECUTABLES.add(executable)
 
+    # get all of the executables (builtins + executables from PATH)
+    global ALL_EXECS
+    ALL_EXECS = BUILTINS.union(EXECUTABLES)
 
-def run_program(user_input):
-    if isredirection(user_input):
-        return os.system(' '.join(user_input))
+    exit_code = 0
 
-    process = subprocess.Popen(
-        user_input,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True, bufsize=1  # Line-buffered
-    )
-
-    # Read stdout in real-time as lines arrive
     while True:
-        output = process.stdout.readline()
+        color = RED if exit_code else GREEN
+        status = f" {color}{exit_code}{RESET}"
 
-        if not output and process.poll() is not None:
+        try:
+            # readline transforms input function to return raw input data
+            raw_user_input = input(f"${status} ")
+        except KeyboardInterrupt:   # ctrl-c
+            exit_code = 130
+            print()
+            continue
+        except EOFError:  # ctrl-d
+            exit_code = 0
+            print()
             break
 
-        if output:
-            print(output, end='')
-            sys.stdout.flush()  # print to the screen immediately
-
-    stderr = process.stderr.read()
-    if stderr:
-        print(stderr, end='', file=sys.stderr)
-
-
-def isredirection(user_input):
-    return any(part in REDIRECTIONS for part in user_input)
-
-
-def main():
-    while True:
-        sys.stdout.write("$ ")
-
-        # extract command and arguments
-        # shlex.split handles the quoting
-        user_input = shlex.split(input())
-
-        command = user_input[0]
+        # split the data using shell-like syntax
+        user_input_list = shlex.split(raw_user_input)
+        command = user_input_list[0]
 
         # handle built-ins
         if command == "exit":
+            exit_code = 0
             break
         if command == "pwd":
+            exit_code = 0
             print(os.getcwd())
         elif command == "cd":
-            path = user_input[1]
-            if path.startswith('~'):
-                path = path.replace('~', os.getenv("HOME"))
+            path = os.path.expanduser(user_input_list[1])
             if os.path.exists(path):
+                exit_code = 0
                 os.chdir(path)
             else:
+                exit_code = 1
                 print(f"{command}: {path}: No such file or directory")
         elif command == "type":
-            for arg in user_input[1:]:
+            for arg in user_input_list[1:]:
                 if arg in BUILTINS:
+                    exit_code = 0
                     print(f"{arg} is a shell builtin")
                     continue
 
                 filepath = isinpath(arg)
                 if filepath:
+                    exit_code = 0
                     print(f"{arg} is {filepath}")
                 else:
+                    exit_code = 1
                     print(f"{arg}: not found")
         else:
             # handle executables
             filepath = isinpath(command)
             if filepath and os.access(filepath, os.X_OK):
-                run_program(user_input)
+                exit_code = run(user_input_list)
             elif os.access(command, os.X_OK):
-                run_program(user_input)
+                exit_code = run(user_input_list)
             else:
+                exit_code = 127
                 print(f"{command}: command not found")
 
 
-if __name__ == "__main__": main()
+if __name__ == "__main__":
+    main()
