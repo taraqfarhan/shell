@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shell"
+version = "0.1.0"
+description = "A custom shell built for CSE 3200"
+requires-python = ">=3.8"
+
+[project.scripts]
+sh = "sh.shell:main"
