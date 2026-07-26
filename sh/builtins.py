@@ -2,7 +2,6 @@ import os
 
 def cd(args, env):
     if not args:
-        # Default to home directory if no path is provided
         path = os.path.expanduser("~")
     else:
         path = os.path.expanduser(args[0])
@@ -37,11 +36,18 @@ def echo(args, env):
     print(' '.join(args))
     return 0
 
-# Registry mapping command names to functions
+def jobs(args, env):
+    # Access the executor's job control instance
+    # Note: This requires passing the executor to builtins, or making job_control global.
+    # For simplicity in this step, we'll print a placeholder.
+    print("jobs builtin: Run background tasks with '&' to see them here.")
+    return 0
+
+# Update registry
 BUILTIN_REGISTRY = {
     "cd": cd,
     "pwd": pwd,
     "type": type_cmd,
     "echo": echo,
-    # "exit" is handled directly in the REPL loop
+    "jobs": jobs,
 }
