@@ -12,6 +12,9 @@ requires-python = ">=3.8"
 sh = "sh.shell:main"
 sh-gui = "app_gui:main"
 
+[tool.setuptools]
+py-modules = ["app_gui"]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["sh", "sh_gui"]
