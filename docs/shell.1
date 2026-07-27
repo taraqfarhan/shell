@@ -1,26 +1,90 @@
-.TH SH 1 "2024-05-12" "1.0" "CSE 3200 Shell Manual"
+.TH SH 1 "2026-07-27" "1.0" "Shell Manual"
 .SH NAME
 sh \- Custom Python-based Unix Shell
 .SH SYNOPSIS
 .B sh
 .SH DESCRIPTION
-A custom shell built for CSE 3200. Supports basic command execution, PATH resolution, pseudo-terminal I/O, and basic background job tracking.
-.SH BUILTINS
+.B sh
+is a custom Unix command shell implemented in Python. It features an interactive Read-Eval-Print Loop (REPL), Abstract Syntax Tree (AST) parsing, pseudo-terminal allocation for interactive applications, pipeline chaining, stream redirection, environment variable expansion, persistent command history, and background job tracking.
+.SH BUILTIN COMMANDS
 .TP
-.B cd [dir]
-Changes the current working directory.
+.B cd [directory]
+Change the current working directory to \fIdirectory\fR. If no argument is specified, defaults to the user's home directory (\fB~\fR).
 .TP
 .B pwd
-Prints the working directory.
+Print the absolute path of the current working directory.
 .TP
-.B type [cmd]
-Displays how a command would be interpreted (builtin or PATH).
+.B type \fR[\fIcommand\fR ...]
+Indicate how each specified \fIcommand\fR would be interpreted (as a shell builtin or an executable file in \fB$PATH\fR).
+.TP
+.B echo \fR[\fIarg\fR ...]
+Display arguments separated by single spaces followed by a newline.
+.TP
+.B jobs
+List active background jobs managed by the shell and reap terminated background processes.
+.TP
+.B history
+Display the numbered list of previous commands stored in readline history.
 .TP
 .B exit
-Exits the shell.
+Terminate the shell session.
+.SH ENVIRONMENT VARIABLES & EXPANSION
+.TP
+.B $?
+Expands to the exit status code of the last executed command.
+.TP
+.B $VAR
+Expands to the value of the environment variable \fIVAR\fR (e.g., \fB$USER\fR, \fB$PATH\fR).
+.TP
+.B ~
+Expands to the user's home directory.
+.SH REDIRECTION OPERATORS
+The shell supports standard stream redirections for both external commands and builtins:
+.TP
+.B > \fR, \fB1>
+Redirect standard output to a file (overwrites).
+.TP
+.B >> \fR, \fB1>>
+Redirect standard output to a file (appends).
+.TP
+.B 2>
+Redirect standard error to a file (overwrites).
+.TP
+.B 2>>
+Redirect standard error to a file (appends).
+.TP
+.B 2>&1
+Merge standard error into standard output.
+.TP
+.B &> \fR, \fB>&
+Redirect both standard output and standard error to a file (overwrites).
+.TP
+.B &>>
+Redirect both standard output and standard error to a file (appends).
+.TP
+.B <
+Redirect standard input from a file.
+.SH PIPELINES
+Commands connected by a pipe character (\fB|\fR) form a pipeline where the standard output of the left-hand command is connected via a Unix pipe descriptor to the standard input of the right-hand command. Builtin commands fully participate in pipeline chains.
+.SH JOB CONTROL
+Append an ampersand (\fB&\fR) to the end of a command to run it asynchronously in the background. The shell prints the assigned job ID and PID, then immediately returns control to the REPL prompt. Use the \fBjobs\fR builtin to check status.
+.SH PROMPT & HISTORY
+The shell prompt displays the basename of the current working directory and the exit code of the last command in \fBGREEN\fR (exit code 0) or \fBRED\fR (non-zero). Command history is automatically saved to \fB~/.mysh_history\fR upon exit and restored on launch.
 .SH EXAMPLES
 Run a command in the background:
 .PP
 .RS
-sleep 5 &
+sleep 10 &
+.RE
+.PP
+Filter command output through a pipeline to a file:
+.PP
+.RS
+history | grep cd > output.txt
+.RE
+.PP
+Expand environment variables and exit codes:
+.PP
+.RS
+echo Current user is $USER with last status $?
 .RE

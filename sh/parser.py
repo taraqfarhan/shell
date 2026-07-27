@@ -20,14 +20,14 @@ class Command:
 class Pipeline:
     commands: List[Command] = field(default_factory=list)
 
-REDIRECTIONS = {'>', '1>', '2>', '<', '>>', '1>>', '2>>', '2>&1', '&>', '>&', '&>>', '<<<'}
+REDIRECTIONS = {'>', '1>', '2>', '<', '>>', '1>>', '2>>', '2>&1', '&>', '&>>'}
 
 class Parser:
     def __init__(self, text: str, exit_code: int = 0):
-        # 1. Expand $? to the last exit code
+        # Expand $? to the last exit code
         text = text.replace('$?', str(exit_code))
 
-        # 2. Expand $VAR (e.g., $USER, $PATH) using regex
+        # Expand $VAR (e.g., $USER, $PATH) using regex
         def replace_env(match):
             var_name = match.group(1)
             # If the variable doesn't exist, return empty string instead of the original text
@@ -46,7 +46,7 @@ class Parser:
         if not tokens:
             return Pipeline(commands=[])
 
-        # 3. Expand ~ to home directory for all tokens
+        # Expand ~ to home directory for all tokens
         tokens = [os.path.expanduser(t) for t in tokens]
 
         background = False

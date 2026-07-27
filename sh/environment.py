@@ -5,7 +5,7 @@ class Environment:
     def __init__(self):
         self.executables = set()
         self.executable_paths = set()
-        self.builtins = {"echo", "type", "exit", "pwd", "cd", "history"}
+        self.builtins = {"echo", "type", "exit", "pwd", "cd", "history", "jobs"}
         self.all_execs = set()
         self._scan_path()
 
@@ -39,7 +39,7 @@ class Environment:
             begin = readline.get_begidx()
             end = readline.get_endidx()
 
-            # 1. Handle standalone tilde completion (e.g., "~" or "~user")
+            # Handle standalone tilde completion (e.g., "~" or "~user")
             if text.startswith('~') and '/' not in text:
                 if state == 0:
                     return text + '/'
@@ -47,7 +47,7 @@ class Environment:
 
             matches = []
 
-            # 2. Determine if we are completing the first word (a command)
+            # Determine if we are completing the first word (a command)
             # It's a command if there is nothing before the cursor except spaces
             is_command = (line[:begin].strip() == '')
 
@@ -57,7 +57,7 @@ class Environment:
                     if cmd.startswith(text):
                         matches.append(cmd + ' ')
 
-            # 3. File/Path completion
+            # File/Path completion
             # Reconstruct the full word being typed to handle paths correctly
             word_start = begin
             while word_start > 0 and line[word_start-1] not in (' ', '\t'):

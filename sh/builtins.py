@@ -48,7 +48,6 @@ def jobs(args, shell):
 
 def history(args, shell):
     """Prints the command history stored by readline"""
-    # get the length of the current history
     length = readline.get_current_history_length()
     for i in range(1, length+1):
         item = readline.get_history_item(i)

@@ -29,11 +29,11 @@ class Executor:
         if not pipeline.commands:
             return 0
 
-        # NEW: If there are multiple commands, route to the pipeline executor
+        # If there are multiple commands, route to the pipeline executor
         if len(pipeline.commands) > 1:
             return self._run_pipeline(pipeline)
 
-        # --- Single Command Execution (Existing Logic) ---
+        # Single Command Execution
         cmd = pipeline.commands[0]
         command_list = [cmd.name] + cmd.args
 
@@ -219,3 +219,4 @@ class Executor:
         finally:
             for f in files_to_close:
                 f.close()
+

@@ -1,5 +1,4 @@
 import os
-import signal
 
 class JobControl:
     def __init__(self):
@@ -43,3 +42,4 @@ class JobControl:
             os.killpg(pgid, sig)
         except ProcessLookupError:
             pass
+

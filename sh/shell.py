@@ -38,9 +38,13 @@ class Shell:
         """Save history to ~/.mysh_history"""
         # Limit history to 1000 entries
         readline.set_history_length(1000)
-        readline.write_history_file(str(HISTORY_FILE))
+        try:
+            readline.write_history_file(str(HISTORY_FILE))
+        except OSError:  # permission issues, filesystem errors
+            pass
 
     def execute_builtin(self, cmd):
+        old_stdin = sys.stdin
         old_stdout = sys.stdout
         old_stderr = sys.stderr
         files_to_close = []
@@ -59,11 +63,16 @@ class Shell:
                     f = open(r.target, mode)
                     sys.stderr = f
                     files_to_close.append(f)
+                elif r.op == '<':
+                    f = open(r.target, 'r')
+                    sys.stdin = f
+                    files_to_close.append(f)
                 elif r.op == '2>&1':
                     sys.stderr = sys.stdout
 
             self.exit_code = BUILTIN_REGISTRY[cmd.name](cmd.args, self)
         finally:
+            sys.stdin = old_stdin
             sys.stdout = old_stdout
             sys.stderr = old_stderr
             for f in files_to_close:
