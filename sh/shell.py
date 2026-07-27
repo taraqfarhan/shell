@@ -1,3 +1,4 @@
+# sh/shell.py
 import sys
 import os
 import readline
@@ -16,19 +17,54 @@ class Shell:
         self._setup_readline()
 
     def _setup_readline(self):
+        # Tell readline NOT to break words on '/' so paths complete correctly
+        readline.set_completer_delims(' \t\n/')
+
         readline.set_completer(self.env.get_completer())
         if sys.platform == 'linux':
             readline.parse_and_bind("tab: complete")
         else:
+            # macOS default binding
             readline.parse_and_bind("bind ^I rl_complete")
+
+    def execute_builtin(self, cmd):
+        old_stdout = sys.stdout
+        old_stderr = sys.stderr
+        files_to_close = []
+
+        try:
+            for r in cmd.redirects:
+                if r.op in ('>', '1>', '>>', '1>>', '&>', '&>>'):
+                    mode = 'a' if '>>' in r.op else 'w'
+                    f = open(r.target, mode)
+                    sys.stdout = f
+                    if '&' in r.op:
+                        sys.stderr = f
+                    files_to_close.append(f)
+                elif r.op in ('2>', '2>>'):
+                    mode = 'a' if '>>' in r.op else 'w'
+                    f = open(r.target, mode)
+                    sys.stderr = f
+                    files_to_close.append(f)
+                elif r.op == '2>&1':
+                    sys.stderr = sys.stdout
+
+            self.exit_code = BUILTIN_REGISTRY[cmd.name](cmd.args, self)
+        finally:
+            sys.stdout = old_stdout
+            sys.stderr = old_stderr
+            for f in files_to_close:
+                f.close()
 
     def run(self):
         while True:
             color = RED if self.exit_code else GREEN
-            status = f" {color}{self.exit_code}{RESET}"
+
+            cwd = os.path.basename(os.getcwd()) or "/"
+            prompt = f"$ {cwd} {color}{self.exit_code}{RESET} "
 
             try:
-                raw_user_input = input(f"${status} ")
+                raw_user_input = input(prompt)
             except KeyboardInterrupt:
                 self.exit_code = 130
                 print()
@@ -41,8 +77,7 @@ class Shell:
             if not raw_user_input.strip():
                 continue
 
-            # 1. PARSE: Convert string to AST
-            parser = Parser(raw_user_input)
+            parser = Parser(raw_user_input, self.exit_code)
             pipeline = parser.parse()
 
             if not pipeline.commands:
@@ -51,14 +86,12 @@ class Shell:
 
             cmd = pipeline.commands[0]
 
-            # 2. EXECUTE: Builtins vs External
             if cmd.name == "exit":
                 break
-                
+
             if cmd.name in BUILTIN_REGISTRY:
-                self.exit_code = BUILTIN_REGISTRY[cmd.name](cmd.args, self.env)
+                self.execute_builtin(cmd)
             else:
-                # Pass the AST to the executor
                 filepath = self.env.is_in_path(cmd.name)
                 if filepath and os.access(filepath, os.X_OK):
                     self.exit_code = self.executor.run(pipeline)
@@ -69,6 +102,5 @@ class Shell:
                     print(f"{cmd.name}: command not found")
 
 def main():
-    """Entry point for the shell."""
     shell = Shell()
     shell.run()

@@ -1,0 +1,26 @@
+.TH SH 1 "2024-05-12" "1.0" "CSE 3200 Shell Manual"
+.SH NAME
+sh \- Custom Python-based Unix Shell
+.SH SYNOPSIS
+.B sh
+.SH DESCRIPTION
+A custom shell built for CSE 3200. Supports basic command execution, PATH resolution, pseudo-terminal I/O, and basic background job tracking.
+.SH BUILTINS
+.TP
+.B cd [dir]
+Changes the current working directory.
+.TP
+.B pwd
+Prints the working directory.
+.TP
+.B type [cmd]
+Displays how a command would be interpreted (builtin or PATH).
+.TP
+.B exit
+Exits the shell.
+.SH EXAMPLES
+Run a command in the background:
+.PP
+.RS
+sleep 5 &
+.RE
