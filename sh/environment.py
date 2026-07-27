@@ -1,4 +1,3 @@
-# sh/environment.py
 import os
 import readline
 
@@ -6,7 +5,7 @@ class Environment:
     def __init__(self):
         self.executables = set()
         self.executable_paths = set()
-        self.builtins = {"echo", "type", "exit", "pwd", "cd"}
+        self.builtins = {"echo", "type", "exit", "pwd", "cd", "history"}
         self.all_execs = set()
         self._scan_path()
 

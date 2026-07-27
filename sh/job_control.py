@@ -1,4 +1,3 @@
-# sh/job_control.py
 import os
 import signal
 

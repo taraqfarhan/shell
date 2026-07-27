@@ -1,7 +1,7 @@
-# sh/shell.py
 import sys
 import os
 import readline
+from pathlib import Path
 
 from sh.utils import RED, GREEN, RESET
 from sh.environment import Environment
@@ -9,23 +9,36 @@ from sh.executor import Executor
 from sh.parser import Parser
 from sh.builtins import BUILTIN_REGISTRY
 
+HISTORY_FILE = Path.home() / ".mysh_history"
+
 class Shell:
     def __init__(self):
         self.env = Environment()
         self.executor = Executor(self.env)
         self.exit_code = 0
         self._setup_readline()
+        self._load_history()
 
     def _setup_readline(self):
-        # Tell readline NOT to break words on '/' so paths complete correctly
+        # Tell readline to break words on spaces and slashes
         readline.set_completer_delims(' \t\n/')
 
         readline.set_completer(self.env.get_completer())
         if sys.platform == 'linux':
             readline.parse_and_bind("tab: complete")
         else:
-            # macOS default binding
             readline.parse_and_bind("bind ^I rl_complete")
+
+    def _load_history(self):
+        """Load history from ~/.mysh_history"""
+        if HISTORY_FILE.exists():
+            readline.read_history_file(str(HISTORY_FILE))
+
+    def _save_history(self):
+        """Save history to ~/.mysh_history"""
+        # Limit history to 1000 entries
+        readline.set_history_length(1000)
+        readline.write_history_file(str(HISTORY_FILE))
 
     def execute_builtin(self, cmd):
         old_stdout = sys.stdout
@@ -57,49 +70,52 @@ class Shell:
                 f.close()
 
     def run(self):
-        while True:
-            color = RED if self.exit_code else GREEN
+        try:
+            while True:
+                color = RED if self.exit_code else GREEN
+                cwd = os.path.basename(os.getcwd()) or "/"
+                prompt = f"$ {cwd} {color}{self.exit_code}{RESET} "
 
-            cwd = os.path.basename(os.getcwd()) or "/"
-            prompt = f"$ {cwd} {color}{self.exit_code}{RESET} "
+                try:
+                    raw_user_input = input(prompt)
+                except KeyboardInterrupt:
+                    self.exit_code = 130
+                    print()
+                    continue
+                except EOFError:
+                    self.exit_code = 0
+                    print()
+                    break
 
-            try:
-                raw_user_input = input(prompt)
-            except KeyboardInterrupt:
-                self.exit_code = 130
-                print()
-                continue
-            except EOFError:
-                self.exit_code = 0
-                print()
-                break
+                if not raw_user_input.strip():
+                    continue
 
-            if not raw_user_input.strip():
-                continue
+                parser = Parser(raw_user_input, self.exit_code)
+                pipeline = parser.parse()
 
-            parser = Parser(raw_user_input, self.exit_code)
-            pipeline = parser.parse()
+                if not pipeline.commands:
+                    self.exit_code = 2
+                    continue
 
-            if not pipeline.commands:
-                self.exit_code = 2
-                continue
+                cmd = pipeline.commands[0]
 
-            cmd = pipeline.commands[0]
+                if cmd.name == "exit":
+                    break
 
-            if cmd.name == "exit":
-                break
-
-            if cmd.name in BUILTIN_REGISTRY:
-                self.execute_builtin(cmd)
-            else:
-                filepath = self.env.is_in_path(cmd.name)
-                if filepath and os.access(filepath, os.X_OK):
-                    self.exit_code = self.executor.run(pipeline)
-                elif os.access(cmd.name, os.X_OK):
-                    self.exit_code = self.executor.run(pipeline)
+                if cmd.name in BUILTIN_REGISTRY:
+                    self.execute_builtin(cmd)
                 else:
-                    self.exit_code = 127
-                    print(f"{cmd.name}: command not found")
+                    filepath = self.env.is_in_path(cmd.name)
+                    if filepath and os.access(filepath, os.X_OK):
+                        self.exit_code = self.executor.run(pipeline)
+                    elif os.access(cmd.name, os.X_OK):
+                        self.exit_code = self.executor.run(pipeline)
+                    else:
+                        self.exit_code = 127
+                        print(f"{cmd.name}: command not found")
+        finally:
+            # Save history on exit
+            self._save_history()
 
 def main():
     shell = Shell()

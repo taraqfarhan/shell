@@ -1,4 +1,3 @@
-# sh/parser.py (Replace the entire file)
 import shlex
 import os
 import re
