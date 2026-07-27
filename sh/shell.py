@@ -24,10 +24,12 @@ class Shell:
         readline.set_completer_delims(' \t\n/')
 
         readline.set_completer(self.env.get_completer())
-        if sys.platform == 'linux':
-            readline.parse_and_bind("tab: complete")
-        else:
-            readline.parse_and_bind("bind ^I rl_complete")
+        for binding in ["tab: complete", "bind ^I rl_complete", "\t: complete"]:
+            try:
+                readline.parse_and_bind(binding)
+            except Exception:
+                pass
+
 
     def _load_history(self):
         """Load history from ~/.mysh_history"""
@@ -80,10 +82,14 @@ class Shell:
 
     def run(self):
         try:
+            print("Welcome to sh (Python Unix Shell v0.1.0)")
+
             while True:
-                color = RED if self.exit_code else GREEN
+                color_code = RED if self.exit_code else GREEN
+                color_esc = f"\001{color_code}\002"
+                reset_esc = f"\001{RESET}\002"
                 cwd = os.path.basename(os.getcwd()) or "/"
-                prompt = f"$ {cwd} {color}{self.exit_code}{RESET} "
+                prompt = f"$ {cwd} {color_esc}{self.exit_code}{reset_esc} "
 
                 try:
                     raw_user_input = input(prompt)
