@@ -26,14 +26,13 @@ def cd(args, shell):
 
     # Change directory
     try:
-        if os.path.islink(path) and os.path.isdir(os.path.realpath(path)):
-            path = os.path.realpath(path)
-            
+        # Preserve logical path (symlinks) for $PWD unless the user chose -P above.
+        new_pwd = os.path.abspath(path)
         os.chdir(path)
         # Update OLDPWD and PWD environment variables
         os.environ["OLDPWD"] = old_pwd
         shell.oldpwd = old_pwd
-        os.environ["PWD"] = os.getcwd()
+        os.environ["PWD"] = new_pwd
         return 0
     except NotADirectoryError:
         print(f"cd: {args[0]}: Not a directory")
