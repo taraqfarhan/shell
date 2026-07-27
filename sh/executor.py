@@ -137,6 +137,7 @@ class Executor:
         prev_read_fd = None
         last_stdout = sys.stdout
         files_to_close = []
+        last_stage_exit_code = None
 
         last_cmd = pipeline.commands[-1]
 
@@ -168,12 +169,17 @@ class Executor:
 
                     try:
                         self.shell_obj.exit_code = 0
-                        BUILTIN_REGISTRY[cmd.name](cmd.args, self.shell_obj)
+                        builtin_exit_code = BUILTIN_REGISTRY[cmd.name](cmd.args, self.shell_obj)
+                        self.shell_obj.exit_code = builtin_exit_code if builtin_exit_code is not None else 0
                     except Exception as e:
                         print(f"Shell Error: {e}", file=sys.stderr)
+                        self.shell_obj.exit_code = 1
 
                     sys.stdout = old_stdout
                     output_str = buffer.getvalue()
+
+                    if i == len(pipeline.commands) - 1:
+                        last_stage_exit_code = self.shell_obj.exit_code
 
                     # Write the builtin's output to the pipe (or terminal)
                     if isinstance(stdout_target, int):
@@ -190,6 +196,8 @@ class Executor:
                         close_fds=True
                     )
                     processes.append(process)
+                    if i == len(pipeline.commands) - 1:
+                        last_stage_exit_code = process
 
                 # Close file descriptors in the parent process
                 if prev_read_fd:
@@ -199,17 +207,15 @@ class Executor:
                     prev_read_fd = read_fd
 
             # Wait for all external processes to finish
-            exit_code = 0
             for p in processes:
                 p.wait()
-                if p.returncode is not None:
-                    exit_code = p.returncode
 
-            if exit_code is None:
+            if isinstance(last_stage_exit_code, subprocess.Popen):
+                return last_stage_exit_code.returncode if last_stage_exit_code.returncode is not None else 1
+            if last_stage_exit_code is None:
                 return 1
-            return exit_code
+            return last_stage_exit_code
 
         finally:
             for f in files_to_close:
                 f.close()
-
