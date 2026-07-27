@@ -64,3 +64,54 @@ The tab completion engine (`Environment.get_completer()`) dynamically tailors su
 
 - **History File**: Shell history is loaded on startup from `~/.mysh_history` and flushed on exit, maintaining up to 1,000 commands across sessions.
 - **Visual Exit Status**: The shell prompt displays the current working directory along with the exit status of the previously executed command, highlighted in **GREEN** for code `0` and **RED** for error status codes.
+
+---
+
+## 8. Native PyQt6 Desktop GUI Architecture (`sh_gui`)
+
+Rather than relying on web/Electron wrappers or external terminal emulators, **sh** features a native PyQt6 Desktop GUI (`app_gui.py` / `sh_gui`).
+
+- **Design Language**: Sleek dark/light theme palettes, bottom-positioned left-aligned tab bar (`TabPosition.South`), clean status bar metrics, and no emoji clutter.
+- **Sub-Process PTY Integration**: Launches `python3 -m sh` in a dedicated pseudo-terminal worker thread (`PTYSession`), setting `SHELL=sh` and injecting `PYTHONPATH` so the GUI natively runs the custom shell engine.
+
+---
+
+## 9. Native QPainter Grid Rendering & Sub-Pixel Precision
+
+Rather than wrapping heavy text-editing widgets (`QTextEdit`), the terminal interface uses a custom `QPainter` 2D grid character canvas (`TerminalWidget`) backed by `pyte` VT100 screen parsing.
+
+- **Floating-Point Advance Metrics**: Calculates character and cursor pixel coordinates using floating-point advance widths (`char_width_float`), preventing rounding drift over multiple text columns.
+- **Unified Cell & Cursor Mapping**: Both character text and the block cursor derive positions from shared coordinate helper functions (`get_col_x` and `get_row_y`), ensuring 100% pixel-perfect text/cursor alignment at every font size and zoom level.
+- **Targeted Cell Repainting**: Invokes `self.update(QRect)` on the specific cursor bounding cell during cursor blink cycles, completely eliminating full-screen repaints and text flickering.
+
+---
+
+## 10. Focus Navigation Interception (`focusNextPrevChild`)
+
+Standard Qt container widgets intercept the <kbd>Tab</kbd> key for focus navigation between controls.
+
+- **Focus Navigation Override**: Overrides `focusNextPrevChild` on `TerminalWidget` to return `False`. This prevents Qt from trapping tab focus, allowing `b'\t'` to pass directly to the underlying PTY for shell tab completion.
+
+---
+
+## 11. Bidirectional `pyte` Line Buffer Synchronization
+
+When terminal window dimensions or font sizes change, `pyte.HistoryScreen.resize()` shifts buffer lines.
+
+- **Cursor Position Tracking**: Tracks history line deltas during grid resizes, shifting `screen.cursor.y` up when grid height shrinks and down when lines are restored from history. This prevents the cursor block from drifting away from active prompt lines.
+
+---
+
+## 12. Readline Escape Sequence Protection (`\001` & `\002`)
+
+Python's `readline` module calculates prompt length by counting characters. Raw ANSI color escape codes (`\033[92m`) cause `readline` to overestimate visual prompt width, resulting in text overwriting on multi-line inputs.
+
+- **Non-Printing Character Wrapping**: Wraps all ANSI prompt escape sequences in Readline's `\001` (start ignore) and `\002` (end ignore) markers in `sh/shell.py`. `readline` ignores color codes when computing prompt width, enabling clean multi-line wrapping.
+
+---
+
+## 13. POSIX Symlink & `cd` Navigation
+
+- **Logical vs Physical Path Resolution**: `cd` preserves logical symlink directory paths in `$PWD` by default (`cd -L`), while supporting physical resolution via `-P`.
+- **Previous Directory Toggle (`cd -`)**: Toggles to `$OLDPWD` and prints the path.
+- **Diagnostic Error Handling**: Detects symlinks to regular files and broken symlinks, returning clear diagnostic messages (`cd: <path>: Not a directory` or `cd: <path>: No such file or directory (broken symlink)`).

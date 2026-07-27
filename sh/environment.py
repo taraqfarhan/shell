@@ -3,11 +3,13 @@ import readline
 
 class Environment:
     def __init__(self):
+        os.environ["SHELL"] = "sh"
         self.executables = set()
         self.executable_paths = set()
         self.builtins = {"echo", "type", "exit", "pwd", "cd", "history", "jobs"}
         self.all_execs = set()
         self._scan_path()
+
 
     def _scan_path(self):
         path_env = os.getenv("PATH", "")

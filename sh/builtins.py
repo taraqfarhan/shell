@@ -2,20 +2,52 @@ import os
 import readline
 
 def cd(args, shell):
+    # Track current working directory for OLDPWD
+    old_pwd = os.getcwd()
+
+    # Case 1: No arguments -> Go to HOME (~)
     if not args:
         path = os.path.expanduser("~")
+    # Case 2: cd - -> Go to previous working directory (OLDPWD)
+    elif args[0] == "-":
+        oldpwd_val = os.getenv("OLDPWD") or getattr(shell, "oldpwd", None)
+        if not oldpwd_val:
+            print("cd: OLDPWD not set")
+            return 1
+        path = oldpwd_val
+        print(path)
+    # Case 3: Flag handling (-L logical vs -P physical)
+    elif args[0] in ("-L", "-P") and len(args) > 1:
+        physical = (args[0] == "-P")
+        target_path = os.path.expanduser(args[1])
+        path = os.path.realpath(target_path) if physical else target_path
     else:
         path = os.path.expanduser(args[0])
 
-    if os.path.exists(path):
-        try:
-            os.chdir(path)
-            return 0
-        except NotADirectoryError:
-            print(f"cd: {path}: Not a directory")
-            return 1
-    else:
-        print(f"cd: {path}: No such file or directory")
+    # Change directory
+    try:
+        # Preserve logical path (symlinks) for $PWD unless the user chose -P above.
+        new_pwd = os.path.abspath(path)
+        os.chdir(path)
+        # Update OLDPWD and PWD environment variables
+        os.environ["OLDPWD"] = old_pwd
+        shell.oldpwd = old_pwd
+        os.environ["PWD"] = new_pwd
+        return 0
+    except NotADirectoryError:
+        print(f"cd: {args[0]}: Not a directory")
+        return 1
+    except FileNotFoundError:
+        if os.path.islink(path):
+            print(f"cd: {args[0]}: No such file or directory (broken symlink)")
+        else:
+            print(f"cd: {args[0]}: No such file or directory")
+        return 1
+    except PermissionError:
+        print(f"cd: {args[0]}: Permission denied")
+        return 1
+    except OSError as e:
+        print(f"cd: {args[0]}: {e.strerror}")
         return 1
 
 def pwd(args, shell):

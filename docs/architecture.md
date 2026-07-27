@@ -1,51 +1,51 @@
 # Architecture: sh
 
-This document outlines the architecture of **sh**, a custom Python-based Unix shell designed for structured programming, AST parsing, and OS-level system interaction.
+This document outlines the architecture of **sh**, a custom Python-based Unix shell and PyQt6 Desktop Terminal Emulator designed for structured programming, AST parsing, PTY execution, and native OS-level system interaction.
 
 ---
 
 ## High-Level Architecture Overview
 
 ```
-                      +-------------------+
-                      |   User Interface  |
-                      |     (REPL)        |
-                      +---------+---------+
-                                |
-                          Raw User Input
-                                |
-                                v
-                      +-------------------+
-                      |   Lexer & Parser  | <--- Expands $?, $VAR, ~
-                      +---------+---------+
-                                |
-                          Pipeline AST
-                                |
-                                v
-                      +-------------------+
-                      |     Executor      | <--- Tab Completion & PATH (Environment)
-                      +----+---------+----+
-                           |         |
-         Single Command    |         | Multi-Command Pipeline
-       (PTY / Redirection) |         | (os.pipe & io.StringIO)
-                           v         v
-                      +----+---------+----+
-                      |    Job Control    | <--- Background jobs (&) & os.waitpid
-                      +-------------------+
+                      +---------------------------------------+
+                      |            User Interfaces            |
+                      |  CLI REPL (sh)  |  PyQt6 GUI (sh-gui) |
+                      +-------------------+-------------------+
+                                          |
+                                    Raw User Input
+                                          |
+                                          v
+                      +---------------------------------------+
+                      |             Lexer & Parser            | <--- Expands $?, $VAR, ~
+                      +-------------------+-------------------+
+                                          |
+                                    Pipeline AST
+                                          |
+                                          v
+                      +---------------------------------------+
+                      |                Executor               | <--- PATH & Completion
+                      +---------+-------------------+---------+
+                                |                   |
+              Single Command    |                   | Multi-Command Pipeline
+            (PTY / Redirection) |                   | (os.pipe & io.StringIO)
+                                v                   v
+                      +---------+-------------------+---------+
+                      |              Job Control              | <--- Background jobs (&)
+                      +---------------------------------------+
 ```
 
 ---
 
 ## System Modules & Responsibilities
 
-The shell follows a modular architecture that cleanly isolates input processing, parsing, environment resolution, process execution, job control, and builtin command handling:
+The system follows a modular architecture that cleanly isolates input processing, parsing, environment resolution, process execution, job control, builtin command handling, and native GUI rendering:
 
 ### 1. REPL (`sh/shell.py`)
 - **Main Loop**: Drives the interactive Read-Eval-Print Loop (REPL).
 - **Prompt Rendering**: Dynamically displays the current working directory name and the color-coded exit status of the previous command (`GREEN` for `0`, `RED` for non-zero exit codes).
+- **Readline Escape Protection**: Wraps ANSI color codes in `\001` and `\002` non-printing markers so `readline` accurately calculates prompt width for multi-line inputs.
 - **Readline Integration**: Initializes tab completion, configures completer word delimiters (` \t\n/`), and binds completion keys per OS platform.
 - **History Management**: Loads and persists command history up to 1,000 entries to `~/.mysh_history`.
-- **Builtin Redirection Handling**: Intercepts standard output and error descriptors to support file redirections directly for builtin commands.
 
 ### 2. Lexer & Parser (`sh/parser.py`)
 - **Variable & Path Expansion**: Automatically expands exit codes (`$?`), environment variables (`$VAR`), and tilde home directories (`~`).
@@ -75,11 +75,24 @@ The shell follows a modular architecture that cleanly isolates input processing,
 - **Process Group Signals**: Provides helper routines (`os.killpg`) to deliver signals to entire process groups.
 
 ### 6. Builtin Commands (`sh/builtins.py`)
-- Implements shell builtins: `cd`, `pwd`, `type`, `echo`, `jobs`, `history`, and `exit`.
+- Implements POSIX-compliant shell builtins: `cd` (with logical/physical symlink navigation and `cd -` `$OLDPWD` support), `pwd`, `type`, `echo`, `jobs`, `history`, and `exit`.
 - Registered via `BUILTIN_REGISTRY` dispatch table for modular lookup and invocation.
 
 ### 7. Utilities (`sh/utils.py`)
 - Encapsulates ANSI color code strings (`RED`, `GREEN`, `RESET`) for prompt status styling.
+
+### 8. PyQt6 Desktop Terminal GUI (`sh_gui/` & `app_gui.py`)
+- **`app_gui.py` / `sh_gui/__main__.py`**: Executable launcher entry points for the Desktop GUI app.
+- **`sh_gui/main_window.py` (`MainWindow`)**: main application window with bottom-positioned left-aligned tab bar (`TabPosition.South`), global application shortcuts (`Cmd+T` for New Tab, `Cmd+W` for Close Tab, `Ctrl+L` for Clear), log exporting, and status bar metrics.
+- **`sh_gui/terminal_widget.py` (`TerminalWidget`)**:
+  - Custom `QPainter` 2D grid terminal renderer with `pyte` VT100/ANSI screen state parsing.
+  - Floating-point advance metrics (`char_width_float`) for sub-pixel character and cursor position alignment.
+  - Overridden `focusNextPrevChild` returning `False` so `Tab` key completion is delivered directly to PTY stdin instead of trapping focus in Qt.
+  - Isolated cursor cell repaints (`update(QRect)`) and `WA_NoSystemBackground` double-buffering to eliminate text flicker.
+  - Bidirectional `cursor.y` synchronization during grid resizes and font zoom operations (`Zoom In` / `Zoom Out` / `Reset Zoom`).
+- **`sh_gui/pty_worker.py` (`PTYSession`)**: Asynchronous `QThread` worker spawning `python3 -m sh` inside a PTY with `PYTHONPATH` & `SHELL=sh` set, handling `TIOCSWINSZ` window size signals.
+- **`sh_gui/themes.py`**: Theme palettes (Dark, Light, Solarized) with standard system fonts (`"Helvetica Neue", Helvetica, Arial, sans-serif`) to eliminate Qt startup font alias warnings.
+- **`sh_gui/search_bar.py` & `sh_gui/settings_dialog.py`**: Search overlay and preferences dialog components.
 
 ---
 
@@ -107,7 +120,7 @@ class Pipeline:
 
 ## Data Flow Lifecycle
 
-1. **User Input**: Input line is read by `Shell.run()` via `input(prompt)`.
+1. **User Input**: Input line is read by `Shell.run()` via `input(prompt)` (CLI) or captured via `TerminalWidget.keyPressEvent()` and written to PTY stdin (GUI).
 2. **Parsing**: `Parser` preprocesses variables (`$?`, `$VAR`), tokenizes with `shlex`, resolves tildes (`~`), and constructs a `Pipeline` AST.
 3. **Dispatch**:
    - If single builtin and no pipeline: executed in-process by `Shell.execute_builtin()`.
@@ -116,4 +129,4 @@ class Pipeline:
    - Single external command: spawned using `subprocess.Popen` attached to a pseudo-terminal pair (`pty.openpty()`) or redirected file handles.
    - Pipeline (`cmd1 | cmd2`): connected via inter-process pipes (`os.pipe()`) in `Executor._run_pipeline()`.
 5. **Job Control**: Background processes (`&`) are assigned a Job ID, logged, and tracked asynchronously.
-6. **Prompt Refresh**: The shell captures the return status code and updates the prompt color for the next iteration.
+6. **GUI Rendering**: PTY output streams into `pyte.ByteStream`, updating `pyte.HistoryScreen` and triggering `QPainter` cell grid redraws on `TerminalWidget`.
