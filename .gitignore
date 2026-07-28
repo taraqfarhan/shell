@@ -5,4 +5,5 @@ shell.egg-info/
 .pytest_cache/
 
 .DS_Store
+Barber.app/
 

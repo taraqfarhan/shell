@@ -2,36 +2,112 @@
 Native Canvas Terminal Widget for sh_gui providing terminal emulation.
 """
 
-import sys
 import pyte
 from PyQt6.QtWidgets import QWidget, QApplication
-from PyQt6.QtGui import QFont, QColor, QPainter, QFontMetrics, QClipboard
+from PyQt6.QtGui import QFont, QColor, QPainter, QFontMetrics
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QRect
 
 from sh_gui.themes import THEMES, DEFAULT_THEME
 from sh_gui.pty_worker import PTYSession
 
+PYTE_256_ANSI_MAP = {
+    "000000": "black",
+    "800000": "red",
+    "008000": "green",
+    "808000": "yellow",
+    "000080": "blue",
+    "800080": "magenta",
+    "008080": "cyan",
+    "c0c0c0": "white",
+    "808080": "bright_black",
+    "ff0000": "bright_red",
+    "00ff00": "bright_green",
+    "ffff00": "bright_yellow",
+    "0000ff": "bright_blue",
+    "ff00ff": "bright_magenta",
+    "00ffff": "bright_cyan",
+    "ffffff": "bright_white",
+}
+
 def parse_pyte_color(color_name, default_color, theme):
     if color_name == "default":
         return QColor(default_color)
-    
+
     ansi_map = theme.get("ansi", {})
+
+    if color_name in PYTE_256_ANSI_MAP:
+        color_name = PYTE_256_ANSI_MAP[color_name]
+
+    # Map pyte color names to theme keys
+    if color_name == "brown":
+        color_name = "yellow"
+    elif color_name in ("brightbrown", "brightyellow"):
+        color_name = "bright_yellow"
+
     if color_name in ansi_map:
         return QColor(ansi_map[color_name])
-    
+
     if isinstance(color_name, str):
+        if color_name.startswith("bright"):
+            color_key = color_name[6:]
+            if color_key == "brown":
+                color_key = "yellow"
+            normalized = "bright_" + color_key
+            if normalized in ansi_map:
+                return QColor(ansi_map[normalized])
         if color_name.startswith("#"):
             return QColor(color_name)
-        if len(color_name) == 6:
+        if len(color_name) == 6 and all(c in "0123456789abcdefABCDEF" for c in color_name):
             return QColor(f"#{color_name}")
-        
+
     return QColor(default_color)
 
+import copy
+
+class AltScreenBufferScreen(pyte.HistoryScreen):
+    """
+    Subclass of pyte.HistoryScreen adding support for VT100/Xterm alternate screen buffer switching
+    (DEC private modes 1049, 1047, 47) used by full-screen TTY applications like vi, vim, top, less, nano.
+    """
+    def __init__(self, columns, lines, history=5000):
+        super().__init__(columns, lines, history=history)
+        self._primary_buffer = None
+        self._primary_cursor = None
+        self._primary_margins = None
+        self._is_alt_screen = False
+
+    def set_mode(self, *modes, **kwargs):
+        for mode in modes:
+            if mode in (1049, 1047, 47) and kwargs.get('private'):
+                if not self._is_alt_screen:
+                    self._is_alt_screen = True
+                    self._primary_buffer = copy.deepcopy(self.buffer)
+                    self._primary_cursor = (self.cursor.x, self.cursor.y)
+                    self._primary_margins = self.margins
+                    self.erase_in_display(2)
+                    self.cursor.x = 0
+                    self.cursor.y = 0
+                    self.margins = None
+                return
+        super().set_mode(*modes, **kwargs)
+
+    def reset_mode(self, *modes, **kwargs):
+        for mode in modes:
+            if mode in (1049, 1047, 47) and kwargs.get('private'):
+                if self._is_alt_screen:
+                    self._is_alt_screen = False
+                    if self._primary_buffer is not None:
+                        self.buffer = copy.deepcopy(self._primary_buffer)
+                        self.cursor.x, self.cursor.y = self._primary_cursor
+                        self.margins = self._primary_margins
+                        self._primary_buffer = None
+                return
+        super().reset_mode(*modes, **kwargs)
+
 class TerminalWidget(QWidget):
-    title_changed = pyqtSignal(str)
     process_exited = pyqtSignal(int)
 
-    def __init__(self, theme_name=DEFAULT_THEME, font_family="Menlo", font_size=21, parent=None):
+    def __init__(self, theme_name=DEFAULT_THEME, font_family="Menlo", font_size=13, parent=None):
         super().__init__(parent)
         self.theme_name = theme_name
         self.theme = THEMES.get(theme_name, THEMES[DEFAULT_THEME])
@@ -43,7 +119,15 @@ class TerminalWidget(QWidget):
         self.rows = 24
         self.margin_x = 8
         self.margin_y = 8
-        self.screen = pyte.HistoryScreen(self.cols, self.rows, history=5000)
+        self.screen = AltScreenBufferScreen(self.cols, self.rows, history=5000)
+        
+        # Patch screen handlers to absorb unhandled private flags (e.g. vi/vim private SGR escape sequences)
+        orig_sgr = self.screen.select_graphic_rendition
+        def safe_sgr(*args, **kwargs):
+            kwargs.pop("private", None)
+            return orig_sgr(*args, **kwargs)
+        self.screen.select_graphic_rendition = safe_sgr
+
         self.stream = pyte.ByteStream(self.screen)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
@@ -71,9 +155,9 @@ class TerminalWidget(QWidget):
         self.font.setFixedPitch(True)
         font_metrics = QFontMetrics(self.font)
         
-        # Use precise floating point width and height advances
+        # Use precise floating point width and height advances with 1px line padding to prevent vertical overlap
         self.char_width_float = max(1.0, float(font_metrics.horizontalAdvance('M')))
-        self.char_height_float = max(1.0, float(font_metrics.height()))
+        self.char_height_float = max(1.0, float(font_metrics.height() + 2))
         self.ascent = font_metrics.ascent()
 
     def get_col_x(self, col: int) -> int:
@@ -170,7 +254,10 @@ class TerminalWidget(QWidget):
 
 
     def on_data_received(self, data: bytes):
-        self.stream.feed(data)
+        try:
+            self.stream.feed(data)
+        except Exception:
+            pass
         self.update()
 
     def on_process_exited(self, exit_code: int):
@@ -206,6 +293,14 @@ class TerminalWidget(QWidget):
         bg_default = self.theme["bg"]
         cursor_color = QColor(self.theme["cursor"])
         selection_color = QColor(self.theme["selection"])
+
+        # When in alternate screen mode (vi, vim, top, less), ensure a 100% single uniform background color across the entire window
+        if getattr(self.screen, "_is_alt_screen", False):
+            first_cell_bg = self.screen.buffer[0][0].bg
+            if first_cell_bg != "default":
+                alt_bg = parse_pyte_color(first_cell_bg, bg_default, self.theme)
+                bg_color = alt_bg
+                bg_default = alt_bg.name()
 
         # Fill background
         painter.fillRect(self.rect(), bg_color)
@@ -244,16 +339,17 @@ class TerminalWidget(QWidget):
                 if is_selected:
                     bg = selection_color
 
+                cell_rect = QRect(x, y, cell_w, cell_h)
+
                 # Fill background cell if non-default
                 if bg != bg_color:
-                    cell_rect = QRect(x, y, cell_w, cell_h)
                     painter.fillRect(cell_rect, bg)
 
-                # Draw character
+                # Draw character bounded within cell_rect
                 char_str = char_obj.data
                 if char_str and char_str != ' ':
                     painter.setPen(fg)
-                    painter.drawText(x, y + self.ascent, char_str)
+                    painter.drawText(cell_rect, Qt.AlignmentFlag.AlignCenter, char_str)
 
                 # Underscore styling
                 if char_obj.underscore:
@@ -279,7 +375,7 @@ class TerminalWidget(QWidget):
                         char_under = self.screen.buffer[cursor_row][cursor_col].data
                         if char_under and char_under != ' ':
                             painter.setPen(bg_color)
-                            painter.drawText(cx, cy + self.ascent, char_under)
+                            painter.drawText(cursor_rect, Qt.AlignmentFlag.AlignCenter, char_under)
                     except (IndexError, KeyError):
                         pass
             else:

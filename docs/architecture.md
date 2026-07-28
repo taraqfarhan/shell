@@ -51,7 +51,7 @@ The system follows a modular architecture that cleanly isolates input processing
 - **Variable & Path Expansion**: Automatically expands exit codes (`$?`), environment variables (`$VAR`), and tilde home directories (`~`).
 - **Tokenization**: Uses `shlex.split` for safe handling of quoted strings and escaped characters.
 - **AST Generation**: Converts flat tokens into an Abstract Syntax Tree composed of `Pipeline`, `Command`, and `Redirection` dataclasses.
-- **Pipeline & Operator Identification**: Detects background markers (`&`), pipeline splitters (`|`), and input/output redirection operators (`>`, `1>`, `2>`, `<`, `>>`, `1>>`, `2>>`, `2>&1`, `&>`, `>&`, `&>>`, `<<<`).
+- **Pipeline & Operator Identification**: Detects background markers (`&`), pipeline splitters (`|`), and input/output redirection operators (`>`, `1>`, `2>`, `<`, `>>`, `1>>`, `2>>`, `2>&1`, `&>`, `&>>`).
 
 ### 3. Environment & Completion (`sh/environment.py`)
 - **PATH Resolution**: Scans system `PATH` directories on initialization, building a set of available executables and their absolute file paths.
@@ -62,9 +62,8 @@ The system follows a modular architecture that cleanly isolates input processing
 
 ### 4. Process Executor (`sh/executor.py`)
 - **Single Process Execution**:
-  - **Pseudo-Terminal (PTY)**: Allocates a pseudo-terminal pair via `pty.openpty()` for interactive commands (e.g., `vim`, `top`), putting the child process in a new session (`start_new_session=True`).
-  - **Terminal Raw Mode & Signal Forwarding**: Configures stdin to raw mode (`tty.setraw`) and uses `select.select` to forward keyboard interrupts (`Ctrl+C` / `SIGINT`) and suspend signals (`Ctrl+Z` / `SIGTSTP`) to the active process group (`os.killpg`).
-- **File Redirection Mode**: When redirections are detected, bypasses PTY allocation and routes standard file descriptors directly to files.
+  - Spawns external processes using `subprocess.Popen(start_new_session=True)` attached directly to the active TTY (or redirected file handles), allowing interactive TTY applications (such as `vim`, `top`, `nano`, `less`) to run cleanly without nested PTY conflicts or character decoding crashes.
+- **File Redirection Mode**: When redirections are detected, routes standard file descriptors directly to target files via `parse_redirections()`.
 - **Pipeline Execution (`_run_pipeline`)**:
   - Connects multiple commands in a chain using Unix pipes (`os.pipe()`).
   - Interoperates cleanly with builtins in pipeline chains by executing builtins in-process, capturing output in an in-memory buffer (`io.StringIO`), and writing to pipe file descriptors.
@@ -79,11 +78,12 @@ The system follows a modular architecture that cleanly isolates input processing
 - Registered via `BUILTIN_REGISTRY` dispatch table for modular lookup and invocation.
 
 ### 7. Utilities (`sh/utils.py`)
-- Encapsulates ANSI color code strings (`RED`, `GREEN`, `RESET`) for prompt status styling.
+- Encapsulates ANSI color code strings (`RED`, `GREEN`, `RESET`) for CLI prompt status styling.
+- Contains `parse_redirections(redirects)` helper function to centralize file handle creation and stdio stream redirection across both `Shell` and `Executor`.
 
-### 8. PyQt6 Desktop Terminal GUI (`sh_gui/` & `app_gui.py`)
-- **`app_gui.py` / `sh_gui/__main__.py`**: Executable launcher entry points for the Desktop GUI app.
-- **`sh_gui/main_window.py` (`MainWindow`)**: main application window with bottom-positioned left-aligned tab bar (`TabPosition.South`), global application shortcuts (`Cmd+T` for New Tab, `Cmd+W` for Close Tab, `Ctrl+L` for Clear), log exporting, and status bar metrics.
+### 8. PyQt6 Desktop Terminal GUI (`sh_gui/`)
+- **`sh_gui/__main__.py`**: Executable launcher entry point for the Desktop GUI app (`Barber`).
+- **`sh_gui/main_window.py` (`MainWindow`)**: Main application window with bottom-positioned left-aligned tab bar (`TabPosition.South`), dynamic current working directory (`get_active_tab_cwd`) status bar metrics, global application shortcuts (`Cmd+T` for New Tab, `Cmd+W` for Close Tab, `Ctrl+L` for Clear), and log exporting.
 - **`sh_gui/terminal_widget.py` (`TerminalWidget`)**:
   - Custom `QPainter` 2D grid terminal renderer with `pyte` VT100/ANSI screen state parsing.
   - Floating-point advance metrics (`char_width_float`) for sub-pixel character and cursor position alignment.
@@ -91,8 +91,7 @@ The system follows a modular architecture that cleanly isolates input processing
   - Isolated cursor cell repaints (`update(QRect)`) and `WA_NoSystemBackground` double-buffering to eliminate text flicker.
   - Bidirectional `cursor.y` synchronization during grid resizes and font zoom operations (`Zoom In` / `Zoom Out` / `Reset Zoom`).
 - **`sh_gui/pty_worker.py` (`PTYSession`)**: Asynchronous `QThread` worker spawning `python3 -m sh` inside a PTY with `PYTHONPATH` & `SHELL=sh` set, handling `TIOCSWINSZ` window size signals.
-- **`sh_gui/themes.py`**: Theme palettes (Dark, Light, Solarized) with standard system fonts (`"Helvetica Neue", Helvetica, Arial, sans-serif`) to eliminate Qt startup font alias warnings.
-- **`sh_gui/search_bar.py` & `sh_gui/settings_dialog.py`**: Search overlay and preferences dialog components.
+- **`sh_gui/themes.py`**: Theme palette definitions and application Qt stylesheet generator (`get_app_stylesheet`).
 
 ---
 

@@ -10,10 +10,8 @@ requires-python = ">=3.8"
 
 [project.scripts]
 sh = "sh.shell:main"
-sh-gui = "app_gui:main"
-
-[tool.setuptools]
-py-modules = ["app_gui"]
+sh-gui = "sh_gui.__main__:main"
+barber = "sh_gui.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -7,13 +7,11 @@ from PyQt6.QtWidgets import (
     QMainWindow, QTabWidget, QWidget, QVBoxLayout, QToolBar, 
     QStatusBar, QLabel, QFileDialog, QMessageBox
 )
-from PyQt6.QtGui import QAction, QKeySequence, QShortcut
+from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtCore import Qt, QSize
 
 
 from sh_gui.terminal_widget import TerminalWidget
-from sh_gui.search_bar import SearchBar
-from sh_gui.settings_dialog import SettingsDialog
 from sh_gui.themes import get_app_stylesheet, DEFAULT_THEME
 
 class TerminalTab(QWidget):
@@ -24,11 +22,6 @@ class TerminalTab(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # Search Bar (Hidden by default, toggled with Cmd+F)
-        self.search_bar = SearchBar(self)
-        self.search_bar.search_requested.connect(self.perform_search)
-        layout.addWidget(self.search_bar)
-
         # Native Terminal Canvas Widget
         self.terminal = TerminalWidget(
             theme_name=theme_name,
@@ -37,26 +30,6 @@ class TerminalTab(QWidget):
             parent=self
         )
         layout.addWidget(self.terminal)
-
-    def perform_search(self, query: str, backward: bool, case_sensitive: bool):
-        # Search across pyte buffer lines
-        screen = self.terminal.screen
-        matches = []
-        for r in range(screen.lines):
-            line_str = "".join(screen.buffer[r][c].data for c in range(screen.columns))
-            if not case_sensitive:
-                line_cmp = line_str.lower()
-                q_cmp = query.lower()
-            else:
-                line_cmp = line_str
-                q_cmp = query
-            
-            idx = line_cmp.find(q_cmp)
-            while idx != -1:
-                matches.append((r, idx))
-                idx = line_cmp.find(q_cmp, idx + 1)
-
-        self.search_bar.update_match_count(len(matches), 1 if matches else 0)
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -69,7 +42,7 @@ class MainWindow(QMainWindow):
             "scrollback_lines": 5000
         }
 
-        self.setWindowTitle("sh — Terminal")
+        self.setWindowTitle("Barber - Terminal")
         self.resize(1200, 780)
 
         # Central Tab Widget
@@ -219,13 +192,23 @@ class MainWindow(QMainWindow):
             return widget
         return None
 
-    def toggle_search(self):
-        tab = self.get_current_tab()
-        if tab:
-            if tab.search_bar.isVisible():
-                tab.search_bar.hide_bar()
-            else:
-                tab.search_bar.show_bar()
+    def get_active_tab_cwd(self, tab):
+        if not tab or not hasattr(tab.terminal, "pty_session"):
+            return os.getcwd()
+        pid = tab.terminal.pty_session.pid
+        try:
+            import subprocess
+            out = subprocess.check_output(
+                ["lsof", "-a", "-d", "cwd", "-p", str(pid), "-Fn"],
+                stderr=subprocess.DEVNULL,
+                text=True
+            )
+            for line in out.splitlines():
+                if line.startswith("n") and len(line) > 1:
+                    return line[1:]
+        except Exception:
+            pass
+        return getattr(tab.terminal.pty_session, "cwd", os.getcwd())
 
     def clear_current_terminal(self):
         tab = self.get_current_tab()
@@ -252,20 +235,6 @@ class MainWindow(QMainWindow):
                 f.write(content)
             QMessageBox.information(self, "Export Successful", f"Log saved to {file_path}")
 
-    def open_settings(self):
-        dlg = SettingsDialog(self.settings, self)
-        dlg.settings_changed.connect(self.on_settings_saved)
-        dlg.exec()
-
-    def on_settings_saved(self, new_settings):
-        self.settings.update(new_settings)
-        self.apply_theme()
-        
-        for i in range(self.tab_widget.count()):
-            tab = self.tab_widget.widget(i)
-            if isinstance(tab, TerminalTab):
-                tab.terminal.set_font_size(self.settings["font_size"])
-
     def on_tab_changed(self, index):
         tab = self.get_current_tab()
         if tab:
@@ -281,3 +250,5 @@ class MainWindow(QMainWindow):
             pid = tab.terminal.pty_session.pid
             self.lbl_pid.setText(f"PID: {pid}")
             self.lbl_status.setText("🟢 Active")
+            cwd = self.get_active_tab_cwd(tab)
+            self.lbl_cwd.setText(f"Dir: {os.path.basename(cwd) or '/'}")

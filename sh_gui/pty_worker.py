@@ -54,19 +54,20 @@ class PTYReader(QThread):
 class PTYSession(QObject):
     data_received = pyqtSignal(bytes)
     process_exited = pyqtSignal(int)
-    cwd_changed = pyqtSignal(str)
 
     def __init__(self, command=None, cwd=None, rows=24, cols=80):
         super().__init__()
         self.rows = rows
         self.cols = cols
         
-        # Build environment with project_root in PYTHONPATH and SHELL=sh
+        # Build environment with project_root in PYTHONPATH, SHELL=sh, and TERM=xterm-256color
         project_root = str(Path(__file__).resolve().parent.parent)
         env = os.environ.copy()
         python_path = env.get("PYTHONPATH", "")
         env["PYTHONPATH"] = f"{project_root}:{python_path}" if python_path else project_root
         env["SHELL"] = "sh"
+        env["TERM"] = "xterm-256color"
+        env["COLORTERM"] = "truecolor"
 
 
         # Default command is python3 -m sh

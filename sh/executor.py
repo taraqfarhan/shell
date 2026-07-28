@@ -1,15 +1,11 @@
 import os
 import sys
 import subprocess
-import pty
-import termios
-import tty
-import select
-import signal
 import io
 from sh.parser import Pipeline, Command
 from sh.job_control import JobControl
 from sh.builtins import BUILTIN_REGISTRY
+from sh.utils import parse_redirections
 
 class _DummyShell:
     """A dummy shell object to allow builtins to run inside pipelines."""
@@ -37,95 +33,42 @@ class Executor:
         cmd = pipeline.commands[0]
         command_list = [cmd.name] + cmd.args
 
-        use_pty = not cmd.redirects
-
         stdin_target = None
         stdout_target = None
         stderr_target = None
         files_to_close = []
 
-        if not use_pty:
-            for r in cmd.redirects:
-                if r.op in ('>', '1>', '>>', '1>>', '&>', '&>>'):
-                    mode = 'a' if '>>' in r.op else 'w'
-                    f = open(r.target, mode)
-                    stdout_target = f
-                    if '&' in r.op:
-                        stderr_target = f
-                    files_to_close.append(f)
-                elif r.op in ('2>', '2>>'):
-                    mode = 'a' if '>>' in r.op else 'w'
-                    f = open(r.target, mode)
-                    stderr_target = f
-                    files_to_close.append(f)
-                elif r.op == '<':
-                    stdin_target = open(r.target, 'r')
-                    files_to_close.append(stdin_target)
-                elif r.op == '2>&1':
-                    stderr_target = subprocess.STDOUT
+        if cmd.redirects:
+            stdin_target, stdout_target, stderr_target, files_to_close = parse_redirections(cmd.redirects)
+            if stderr_target == "STDOUT":
+                stderr_target = subprocess.STDOUT
 
         try:
-            if use_pty:
-                master_fd, slave_fd = pty.openpty()
-                stdin_target = slave_fd
-                stdout_target = slave_fd
-                stderr_target = slave_fd
-
             process = subprocess.Popen(
                 command_list,
                 stdin=stdin_target,
                 stdout=stdout_target,
                 stderr=stderr_target,
-                text=True,
                 close_fds=True,
                 start_new_session=True
             )
 
-            if use_pty:
-                os.close(slave_fd)
-
             if cmd.background:
                 self.job_control.add_job(process.pid, process.pid, ' '.join(command_list))
-                if use_pty: os.close(master_fd)
                 return 0
 
-            if use_pty:
-                old_settings = termios.tcgetattr(sys.stdin)
-                try:
-                    tty.setraw(sys.stdin.fileno())
-                    while process.poll() is None:
-                        r, _, _ = select.select([sys.stdin, master_fd], [], [])
-                        if sys.stdin in r:
-                            d = os.read(sys.stdin.fileno(), 1024)
-                            if d:
-                                if b'\x03' in d:
-                                    try: os.killpg(process.pid, signal.SIGINT)
-                                    except ProcessLookupError: pass
-                                    d = d.replace(b'\x03', b'')
-                                elif b'\x1a' in d:
-                                    try: os.killpg(process.pid, signal.SIGTSTP)
-                                    except ProcessLookupError: pass
-                                    d = d.replace(b'\x1a', b'')
-                                if d: os.write(master_fd, d)
-                        if master_fd in r:
-                            try:
-                                d = os.read(master_fd, 1024)
-                                if d: os.write(sys.stdout.fileno(), d)
-                                else: break
-                            except OSError:
-                                break
-                finally:
-                    termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
-                    os.close(master_fd)
-
-            # always wait for the process to finish completely to get the return code
+            # Wait for foreground process to complete
             process.wait()
 
             if process.returncode is not None and process.returncode < 0:
                 return 128 + (-process.returncode)
             if process.returncode is None:
-                return 1   # Fallback just in case
+                return 1
             return process.returncode
+
+        except Exception as e:
+            print(f"sh: {cmd.name}: {e}", file=sys.stderr)
+            return 1
 
         finally:
             for f in files_to_close:

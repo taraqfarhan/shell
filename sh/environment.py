@@ -1,14 +1,16 @@
 import os
 import readline
+from sh.builtins import BUILTIN_REGISTRY
 
 class Environment:
     def __init__(self):
         os.environ["SHELL"] = "sh"
         self.executables = set()
         self.executable_paths = set()
-        self.builtins = {"echo", "type", "exit", "pwd", "cd", "history", "jobs"}
+        self.builtins = set(BUILTIN_REGISTRY.keys()) | {"exit"}
         self.all_execs = set()
         self._scan_path()
+
 
 
     def _scan_path(self):
