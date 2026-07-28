@@ -21,6 +21,12 @@ A custom Unix shell implemented in Python featuring AST-based command parsing, p
   - Multi-tab management, dynamic current working directory status bar metrics (`Dir: <cwd>`), font zooming, log exporting, and copy/paste integration.
 
 ---
+## Fuck Israel
+
+<a href="terminal.png">
+  <img src="terminal.png" alt="PyQt6 Terminal Emulator (Barber)" width="600" height="650"/>
+</a>
+
 
 ## Quick Start
 
