@@ -23,13 +23,14 @@ Rather than evaluating commands line-by-line using naive string splitting, **sh*
 
 ---
 
-## 3. Dual Execution Engine (PTY vs File Redirection)
+## 3. Direct TTY Process Execution & Alternate Screen Buffer Management
 
-Interactive command-line applications (such as `vim`, `top`, or `less`) require a terminal TTY interface to correctly receive keyboard input and render full-screen ANSI sequences.
+Full-screen interactive terminal applications (such as `vim`, `top`, `nano`, `less`, `man`) require a TTY interface to receive raw keyboard events and manage ANSI terminal state.
 
-- **Pseudo-Terminal Allocation**: For standard interactive commands without file redirections, `Executor` allocates a pseudo-terminal pair using `pty.openpty()`. The child process is attached to the slave FD, while the shell reads/writes via the master FD.
-- **Raw Mode & Signal Handling**: The parent shell places its stdin into raw mode (`tty.setraw`) and uses `select.select` to asynchronously multiplex I/O. Keyboard signals (`Ctrl+C` / `SIGINT` and `Ctrl+Z` / `SIGTSTP`) are intercepted and forwarded to the child process group via `os.killpg()`.
-- **Bypassing PTY on Redirection**: When I/O redirection (e.g., `cmd > out.txt`) is specified, PTY mode is bypassed. Standard file handles are attached directly to child process descriptors to ensure clean file output without PTY control escape characters.
+- **Direct TTY Inheritance**: External commands without file redirections spawn using `subprocess.Popen(start_new_session=True)` attached directly to the active TTY descriptors, eliminating nested PTY multiplexing loops and raw character decoding crashes.
+- **Alternate Screen Buffer (`AltScreenBufferScreen`)**: Supports VT100/Xterm DEC private modes `1049`, `1047`, and `47`. When `vim` or `top` opens, the screen saves the primary buffer, cursor, and margins, presenting a clean workspace. Upon exiting (`:q` or `q`), the primary screen buffer and cursor state are restored with zero visual corruption.
+- **Uniform Alternate Background**: When an alternate screen buffer application is active, the entire window canvas is rendered using a single, uniform background color, eliminating patchy color blocks.
+- **Centralized Redirection Helper**: File creation and stdio handle configuration logic is unified into `parse_redirections()` in `sh/utils.py`.
 
 ---
 
@@ -67,22 +68,24 @@ The tab completion engine (`Environment.get_completer()`) dynamically tailors su
 
 ---
 
-## 8. Native PyQt6 Desktop GUI Architecture (`sh_gui`)
+## 8. Native PyQt6 Desktop GUI Architecture (`sh_gui` / Barber)
 
-Rather than relying on web/Electron wrappers or external terminal emulators, **sh** features a native PyQt6 Desktop GUI (`app_gui.py` / `sh_gui`).
+Rather than relying on web/Electron wrappers or external terminal emulators, **sh** features a native PyQt6 Desktop GUI application named **Barber** (`sh_gui`).
 
-- **Design Language**: Sleek dark/light theme palettes, bottom-positioned left-aligned tab bar (`TabPosition.South`), clean status bar metrics, and no emoji clutter.
+- **Design Language**: Sleek dark theme palettes, bottom-positioned left-aligned tab bar (`TabPosition.South`), clean status bar metrics, and no emoji clutter.
 - **Sub-Process PTY Integration**: Launches `python3 -m sh` in a dedicated pseudo-terminal worker thread (`PTYSession`), setting `SHELL=sh` and injecting `PYTHONPATH` so the GUI natively runs the custom shell engine.
+- **Dynamic Process CWD Tracking**: Uses `get_active_tab_cwd` system inspection to dynamically track and update the active process working directory in the status bar (`Dir: <cwd>`) whenever tab switches or updates occur.
 
 ---
 
-## 9. Native QPainter Grid Rendering & Sub-Pixel Precision
+## 9. Native QPainter Grid Rendering, Bounded Cells & 256-Color Mapping
 
 Rather than wrapping heavy text-editing widgets (`QTextEdit`), the terminal interface uses a custom `QPainter` 2D grid character canvas (`TerminalWidget`) backed by `pyte` VT100 screen parsing.
 
 - **Floating-Point Advance Metrics**: Calculates character and cursor pixel coordinates using floating-point advance widths (`char_width_float`), preventing rounding drift over multiple text columns.
-- **Unified Cell & Cursor Mapping**: Both character text and the block cursor derive positions from shared coordinate helper functions (`get_col_x` and `get_row_y`), ensuring 100% pixel-perfect text/cursor alignment at every font size and zoom level.
-- **Targeted Cell Repainting**: Invokes `self.update(QRect)` on the specific cursor bounding cell during cursor blink cycles, completely eliminating full-screen repaints and text flickering.
+- **Bounded Cell Drawing**: Draws each glyph centered inside its exact cell bounding rectangle `cell_rect = QRect(x, y, cell_w, cell_h)`, eliminating vertical line overlapping and text bleeding.
+- **256-Color Palette Theme Mapping (`PYTE_256_ANSI_MAP`)**: Maps Xterm 256-color codes (0-15) directly to the active theme palette (`Catppuccin Mocha`, `One Dark Pro`, `Nord`, etc.), ensuring applications like `vim` render with vibrant, accurate theme colors.
+- **Unified Cell & Cursor Mapping**: Both character text and the block cursor derive positions from shared coordinate helper functions (`get_col_x` and `get_row_y`), ensuring 100% pixel-perfect text/cursor alignment.
 
 ---
 

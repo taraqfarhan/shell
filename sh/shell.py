@@ -3,7 +3,7 @@ import os
 import readline
 from pathlib import Path
 
-from sh.utils import RED, GREEN, RESET
+from sh.utils import RED, GREEN, RESET, parse_redirections
 from sh.environment import Environment
 from sh.executor import Executor
 from sh.parser import Parser
@@ -49,28 +49,16 @@ class Shell:
         old_stdin = sys.stdin
         old_stdout = sys.stdout
         old_stderr = sys.stderr
-        files_to_close = []
+
+        stdin_f, stdout_f, stderr_f, files_to_close = parse_redirections(cmd.redirects)
 
         try:
-            for r in cmd.redirects:
-                if r.op in ('>', '1>', '>>', '1>>', '&>', '&>>'):
-                    mode = 'a' if '>>' in r.op else 'w'
-                    f = open(r.target, mode)
-                    sys.stdout = f
-                    if '&' in r.op:
-                        sys.stderr = f
-                    files_to_close.append(f)
-                elif r.op in ('2>', '2>>'):
-                    mode = 'a' if '>>' in r.op else 'w'
-                    f = open(r.target, mode)
-                    sys.stderr = f
-                    files_to_close.append(f)
-                elif r.op == '<':
-                    f = open(r.target, 'r')
-                    sys.stdin = f
-                    files_to_close.append(f)
-                elif r.op == '2>&1':
-                    sys.stderr = sys.stdout
+            if stdin_f:
+                sys.stdin = stdin_f
+            if stdout_f:
+                sys.stdout = stdout_f
+            if stderr_f:
+                sys.stderr = sys.stdout if stderr_f == "STDOUT" else stderr_f
 
             self.exit_code = BUILTIN_REGISTRY[cmd.name](cmd.args, self)
         finally:
@@ -80,16 +68,15 @@ class Shell:
             for f in files_to_close:
                 f.close()
 
+
     def run(self):
         try:
             print("Welcome to sh (Python Unix Shell v0.1.0)")
 
             while True:
                 color_code = RED if self.exit_code else GREEN
-                color_esc = f"\001{color_code}\002"
-                reset_esc = f"\001{RESET}\002"
                 cwd = os.path.basename(os.getcwd()) or "/"
-                prompt = f"$ {cwd} {color_esc}{self.exit_code}{reset_esc} "
+                prompt = f"$ {cwd} {color_code}{self.exit_code}{RESET} "
 
                 try:
                     raw_user_input = input(prompt)

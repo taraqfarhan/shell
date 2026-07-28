@@ -69,7 +69,9 @@ class Parser:
                     current_cmd_tokens = []
                     current_redirects = []
             elif token in REDIRECTIONS:
-                if i + 1 < len(tokens):
+                if token == '2>&1':
+                    current_redirects.append(Redirection(op=token, target='1'))
+                elif i + 1 < len(tokens):
                     current_redirects.append(Redirection(op=token, target=tokens[i+1]))
                     i += 1  # skip target
                 else:

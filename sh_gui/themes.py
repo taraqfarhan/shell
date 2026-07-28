@@ -2,8 +2,6 @@
 Theme manager and color palettes for sh_gui.
 """
 
-from PyQt6.QtGui import QColor
-
 THEMES = {
     "Catppuccin Mocha": {
         "bg": "#1e1e2e",

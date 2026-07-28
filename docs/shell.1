@@ -1,15 +1,15 @@
 .TH SH 1 "2026-07-27" "0.1.0" "Shell Manual"
 .SH NAME
-sh, app_gui.py, sh-gui \- Custom Python-based Unix Shell and Simple Desktop Terminal Emulator
+sh, sh-gui, barber \- Custom Python-based Unix Shell and Desktop Terminal Emulator (Barber)
 .SH SYNOPSIS
 .B sh
 .br
-.B python3 app_gui.py
+.B python3 -m sh_gui
 .br
-.B sh-gui
+.B barber
 .SH DESCRIPTION
 .B sh
-is a custom Unix command shell implemented in Python. It features an interactive Read-Eval-Print Loop (REPL), Abstract Syntax Tree (AST) parsing, pseudo-terminal allocation for interactive applications, pipeline chaining, stream redirection, environment variable expansion, persistent command history, background job tracking, and a native PyQt6 Desktop Terminal Application (\fBapp_gui.py\fR / \fBsh-gui\fR).
+is a custom Unix command shell implemented in Python. It features an interactive Read-Eval-Print Loop (REPL), Abstract Syntax Tree (AST) parsing, pseudo-terminal allocation for interactive applications, pipeline chaining, stream redirection, environment variable expansion, persistent command history, background job tracking, and a native PyQt6 Desktop Terminal Application (\fBBarber\fR / \fBsh_gui\fR).
 .SH DESKTOP TERMINAL APPLICATION (GUI)
 The desktop application provides a simple graphical terminal interface with:
 .TP
@@ -20,10 +20,14 @@ Bottom-positioned, left-aligned tab bar. Open new shell tabs with \fBCmd+T\fR (o
 Custom 2D \fBQPainter\fR grid character renderer with floating-point sub-pixel advance alignment, isolated cursor blink repaints, drag-selection, copy/paste (\fBCmd+C\fR / \fBCmd+V\fR), and tab completion.
 .TP
 .B Font Zooming
-Scale terminal text on the fly using \fBCmd+=\fR (Zoom In), \fBCmd+-\fR (Zoom Out), and \fBCmd+0\fR (Reset Zoom to default 21pt).
+Scale terminal text on the fly using \fBCmd+=\fR (Zoom In), \fBCmd+-\fR (Zoom Out), and \fBCmd+0\fR (Reset Zoom to default 13pt).
 .TP
 .B Log Export & Controls
 Export terminal scrollback buffer logs directly to file via the \fBSave Log\fR toolbar action. Clear screen with \fBCtrl+L\fR.
+.TP
+.B Dynamic Status Bar
+Displays real-time PID, tab count, process status, and active tab current working directory (\fBDir: <cwd>\fR).
+
 
 .SH BUILTIN COMMANDS
 .TP
