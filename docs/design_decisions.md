@@ -68,9 +68,9 @@ The tab completion engine (`Environment.get_completer()`) dynamically tailors su
 
 ---
 
-## 8. Native PyQt6 Desktop GUI Architecture (`sh_gui`)
+## 8. Native PyQt6 Desktop GUI Architecture (`sh_gui` / Barber)
 
-Rather than relying on web/Electron wrappers or external terminal emulators, **sh** features a native PyQt6 Desktop GUI (`sh_gui`).
+Rather than relying on web/Electron wrappers or external terminal emulators, **sh** features a native PyQt6 Desktop GUI application named **Barber** (`sh_gui`).
 
 - **Design Language**: Sleek dark theme palettes, bottom-positioned left-aligned tab bar (`TabPosition.South`), clean status bar metrics, and no emoji clutter.
 - **Sub-Process PTY Integration**: Launches `python3 -m sh` in a dedicated pseudo-terminal worker thread (`PTYSession`), setting `SHELL=sh` and injecting `PYTHONPATH` so the GUI natively runs the custom shell engine.
